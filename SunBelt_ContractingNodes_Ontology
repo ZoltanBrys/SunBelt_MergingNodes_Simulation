@@ -1,0 +1,117 @@
+#Author=ORCID:0000-0002-3324-2255 and 0000-0003-1372-7164 and 0000-0002-7547-1128 and 0000-0001-8040-1899 and 0000-0001-6227-1242
+
+#deleting the memory and loading igraph
+rm(list = ls())
+library("igraph")
+
+#basic parameters
+sno  <- 543000 #number of nodes of the simulated graph without isolated nodes: 5430000, which is the number of 18-65 year old adults with internet access in Hungary
+
+#01building the graph based on the real life params
+#01building the graph based on the real life params
+rddr <- c(116,130,109,85,111,61,41,54,11,161,13,15,4,3,13,1,1,1,1,24) #real degree distribution, number of nodes with that amount of edges(1-20), isolataed nodes are not included
+
+rddsma5 <- NULL
+rddsma5[1:2] <- rddr[1:2]
+
+for (i in 3:18)
+{
+  rddsma5[i] <- round(rddr[i] - ((rddr[i] - mean(rddr[c(i-2,i-1,i,i+1,i-2)]))*0.5),0)
+}
+i<- 19
+rddsma5[i] <- round(rddr[i] - ((rddr[i] - mean(rddr[c(i-2,i-1,i,i+1)]))*0.5),0)
+i<- 20
+rddsma5[i] <- round(rddr[i] - ((rddr[i] - mean(rddr[c(i-2,i-1,i)]))*0.5),0) 
+
+rdd <- rddsma5 #we use the smoothed degree distribution
+
+rno <- sum(rdd) #number of nodes in the real graph
+red <- (1*rdd[1])+(2*rdd[2])+(3*rdd[3])+(4*rdd[4])+(5*rdd[5])+(6*rdd[6])+(7*rdd[7])+(8*rdd[8])+(9*rdd[9])+(10*rdd[10])+(11*rdd[11])+(12*rdd[12])+(13*rdd[13])+(14*rdd[14])+(15*rdd[15])+(16*rdd[16])+(17*rdd[17])+(18*rdd[18])+(19*rdd[19])+(20*rdd[20]) #number of edges in the real graph
+
+pdd <- rdd/sum(rdd) #real degree distribution ratios of both the real and the simulated graph, ratios
+if (sum(pdd)!=1) {print("Error! Sum of degree distribution ratios is not 100%")}
+
+
+dd <- sno*pdd #degree distribution simulated graph, frequencies
+dd2 <- round(dd,0) #rounding up
+
+outdeg <- c(rep(1,dd2[1]),rep(2,dd2[2]),rep(3,dd2[3]),rep(4,dd2[4]),rep(5,dd2[5]),rep(6,dd2[6]),rep(7,dd2[7]),rep(8,dd2[8]),rep(9,dd2[9]),rep(10,dd2[10]),rep(11,dd2[11]),rep(12,dd2[12]),rep(13,dd2[13]),rep(14,dd2[14]),rep(15,dd2[15]),rep(16,dd2[16]),rep(17,dd2[17]),rep(18,dd2[18]),rep(19,dd2[19]),rep(20,dd2[20]))
+
+if (sum(outdeg) %% 2 != 0) { outdeg[1] <- outdeg[1] + 1 } #correcting the degree sequence if its sum is odd
+sed <- sum(outdeg) #number of edges in the simulated graph
+
+#hist(outdeg, freq = FALSE) #degree distribution of the graph 
+
+#building the first graph 
+vgraf <- sample_degseq( out.deg = outdeg, method = 'simple.no.multiple' )
+
+rm(outdeg) #freeing up memory
+
+if (sum(which_loop(vgraf))>(sno*0.01)) {print("Error! Too much loops")} #number of loops
+if (sum(which_multiple(vgraf))>(sed*0.01)) {print("Error! Too much multiple edges")} #number of multiply edges
+
+vgraf2 <- simplify(vgraf)
+#saveRDS(vgraf2, file = "simulatedfullgraph_2022070_543k", compress = FALSE)
+#vgraf2 <- readRDS(file = "/home/zbrys/R/simulatedfullgraph_2022070_543k") 
+
+rm(vgraf) #freeing up memory
+cat("vgraf2 is ready")
+
+#saving the parameters of the first simulated graph
+ec1<-ecount(vgraf2)
+vc1<-vcount(vgraf2)
+#di1<-diameter(vgraf2, directed = FALSE)
+co1<-components(vgraf2)$no
+ed1<-edge_density(vgraf2, loops = FALSE)
+#mo1<-modularity(cluster_fast_greedy(as.undirected(vgraf2)))
+#bc1<-betweenness(vgraf2, directed=FALSE)
+#cc1<-closeness(vgraf2, normalized=TRUE)
+
+#02contract.vertices
+#02contract.vertices
+rcv  <- ((503/997)*(0.792)*0.955) #ratio of vertices to be contracted, based on real life data, number of people who have partner, mentions in his VIN network and also share similar covid-19 vac behav.
+
+nwes <- rbinom(gorder(vgraf2),1,rcv) #for contraction we assign binom weights for nodes, rcv percentages of them are 1
+V(vgraf2)$weight <- nwes #for checking, new weights shall be 2s
+
+ncn <- round(sum(nwes)*0.5,0) # number of half of the nodes, which shall be contracted
+removednodes <- 0 #number of removed nodes, for controlling purposes
+
+if (gorder(vgraf2)!=sno) {print("Error! Number of nodes are not equal with the desired one!")}
+
+while ( removednodes<(ncn+1) )
+{
+  gs <- gorder(vgraf2) #number of nodes in the graph
+  vn <- sample(c(1:gs),1) #randomly select a node from all nodes, since it is keeps changing it is more efficient than using w==1 subset
+  
+  if (V(vgraf2)$weight[vn]==1) #ha osszevonando
+  { if (length(as.numeric((neighbors(vgraf2, vn))))>0) #ha szomszedjainak szama nagyobb, mint 0
+  {
+    sn <- sample(c(1:length(neighbors(vgraf2, vn))),1) #randomly select one neighbour index
+    cnn <- as.numeric(unname(neighbors(vgraf2, vn)[sn])[1]) #the randomly selected neigbour node id
+    map1 <- c(1:gs) #vertixes of the original graph
+    map1[cnn] <- vn  #randomly selected neighbour becomes one with the randomly selected eligible node
+    vgraf2 <- contract.vertices(vgraf2, map1, vertex.attr.comb=list(weight="sum", "ignore")) #contracting the nodes
+    V(vgraf2)$weight[vn] <- c(2)  #adding weight
+    removednodes <- removednodes +1 
+  } 
+  } 
+  if ((removednodes %% 200) == 0) {cat("removednodes=", removednodes,"ncn=",ncn , "percentage", round((removednodes/ncn),1), "\n")}
+} #while cycle
+
+isolatednodes = which(degree(vgraf2)==0)
+vgraf2 = delete.vertices(vgraf2, isolatednodes)
+
+vgraf2 <-simplify(vgraf2)
+saveRDS(vgraf2, file = "contractedgraph_2022070_543k", compress = FALSE)
+
+#saving the parameters of the contraced graph
+#saving the parameters of the first simulated graph
+ec2<-ecount(vgraf2)
+vc2<-vcount(vgraf2)
+#di2<-diameter(vgraf2, directed = FALSE)
+co2<-components(vgraf2)$no
+ed2<-edge_density(vgraf2, loops = FALSE)
+#mo2<-modularity(cluster_fast_greedy(as.undirected(vgraf2)))
+#bc2<-betweenness(vgraf2, directed=FALSE)
+#cc2<-closeness(vgraf2, normalized=TRUE)
